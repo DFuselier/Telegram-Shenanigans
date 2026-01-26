@@ -8,7 +8,7 @@ import shutil
 def main():
     """
     Displays the main menu and runs the chosen script.
-    """
+    """f
     ascii_art = r"""
 ====================================================================================
 ░▀█▀░█▀▀░░░█▀▀░█░█░█▀▀░▀█▀░█░░░█░░░█▀█░█▀▄░█▀▀
@@ -127,7 +127,7 @@ def process_directories():
         
         if found_tdata_path:
             print(f"--> 'tdata' found! Preparing to copy.")
-            destination_path = f"/home/analyst/telegram_dir_{base_name}/.local/share/TelegramDesktop"
+            destination_path = f"/home/REDACTED/telegram_dir_{base_name}/.local/share/TelegramDesktop"
             
             if os.path.isdir(destination_path):
                 shutil.rmtree(destination_path)
