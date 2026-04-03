@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tournament C2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Cinzel:wght@400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+
+<style>
+  /* ---- Reset & Variables ---- */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --gold:       #c8a84b;
+    --gold-dim:   #8a7032;
+    --gold-glow:  rgba(200, 168, 75, 0.18);
+    --bg:         #0b0c0e;
+    --bg-panel:   #111318;
+    --bg-card:    #161a22;
+    --bg-input:   #0f1115;
+    --border:     #252a35;
+    --border-lit: #3a3f50;
+    --text:       #d4d8e2;
+    --text-dim:   #676e82;
+    --text-faint: #343a4a;
+    --green:      #4caf80;
+    --red:        #cf5050;
+    --amber:      #d4882a;
+    --blue:       #4a7fc1;
+    --radius:     6px;
+    --font-mono:  'Share Tech Mono', monospace;
+    --font-head:  'Cinzel', serif;
+    --font-body:  'Barlow', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ---- Noise overlay ---- */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    background-size: 200px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.6;
+  }
+
+  #app { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ---- Header ---- */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    background: linear-gradient(90deg, rgba(200,168,75,0.04) 0%, transparent 60%);
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-family: var(--font-head);
+    font-size: 15px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-title .sep {
+    width: 1px; height: 18px;
+    background: var(--gold-dim);
+    opacity: 0.5;
+  }
+
+  .header-title .sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+  }
+
+  /* ---- Account status pills ---- */
+  #account-status {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .acc-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    transition: border-color 0.3s, color 0.3s;
+  }
+
+  .acc-pill.online { border-color: var(--green); color: var(--text); }
+  .acc-pill.error  { border-color: var(--red); }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .acc-pill.online .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .acc-pill.error  .dot { background: var(--red); }
+
+  /* ---- Main layout ---- */
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    grid-template-rows: 1fr auto;
+    gap: 0;
+    overflow: hidden;
+    height: calc(100vh - 60px);
+  }
+
+  /* ---- Panel base ---- */
+  .panel {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-family: var(--font-head);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+  }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  /* Scrollbar */
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border-lit); border-radius: 2px; }
+
+  /* ---- Compose panel ---- */
+  #compose-panel { grid-row: 1 / 3; }
+
+  .field { margin-bottom: 18px; }
+
+  label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 7px;
+  }
+
+  select, textarea {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    appearance: none;
+  }
+
+  select:focus, textarea:focus {
+    border-color: var(--gold-dim);
+    box-shadow: 0 0 0 2px var(--gold-glow);
+  }
+
+  textarea { resize: vertical; min-height: 110px; line-height: 1.6; }
+
+  /* Custom select arrow */
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: '▾';
+    position: absolute;
+    right: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--gold-dim);
+    pointer-events: none;
+    font-size: 12px;
+  }
+
+  /* Group multi-select */
+  #group-list {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  #group-list::-webkit-scrollbar { width: 3px; }
+  #group-list::-webkit-scrollbar-thumb { background: var(--border-lit); }
+
+  .group-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+
+  .group-item:hover { background: rgba(200,168,75,0.06); }
+  .group-item.selected { background: rgba(200,168,75,0.1); }
+
+  .group-checkbox {
+    width: 14px; height: 14px;
+    border: 1px solid var(--border-lit);
+    border-radius: 3px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .group-item.selected .group-checkbox {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: var(--bg);
+    font-size: 10px;
+  }
+
+  .group-name { font-size: 13px; color: var(--text); flex: 1; }
+  .group-id { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
+
+  .select-all-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 0 2px;
+  }
+
+  .link-btn {
+    background: none; border: none; cursor: pointer;
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--gold-dim); text-decoration: underline; text-underline-offset: 2px;
+    padding: 0;
+    transition: color 0.15s;
+  }
+  .link-btn:hover { color: var(--gold); }
+
+  .selected-count { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+
+  /* ---- Send button ---- */
+  #send-btn {
+    width: 100%;
+    padding: 11px;
+    background: linear-gradient(135deg, #a07828 0%, #c8a84b 50%, #a07828 100%);
+    background-size: 200% 100%;
+    background-position: 100% 0;
+    border: none;
+    border-radius: var(--radius);
+    color: #0b0c0e;
+    font-family: var(--font-head);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-position 0.4s, opacity 0.2s, transform 0.1s;
+    position: relative;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+
+  #send-btn:hover { background-position: 0 0; }
+  #send-btn:active { transform: scale(0.98); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  #send-btn .btn-spinner {
+    display: none;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #0b0c0e;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto;
+  }
+
+  #send-btn.loading .btn-text { display: none; }
+  #send-btn.loading .btn-spinner { display: block; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Right side: tracker + log ---- */
+  #tracker-panel {
+    grid-column: 2;
+    grid-row: 1;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #log-panel {
+    grid-column: 2;
+    grid-row: 2;
+    border-right: none;
+    height: 200px;
+    flex-shrink: 0;
+  }
+
+  /* ---- Forward cards ---- */
+  .fwd-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    overflow: hidden;
+    animation: fadeUp 0.3s ease;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .fwd-card-header {
+    padding: 12px 16px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+
+  .fwd-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .fwd-account {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  .fwd-message {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .fwd-time {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .dest-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .dest-item {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    transition: border-color 0.3s;
+  }
+
+  .dest-item.has-reply { border-color: var(--green); background: rgba(76,175,128,0.05); }
+  .dest-item.send-error { border-color: var(--red); opacity: 0.7; }
+
+  .dest-name {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dest-status {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+
+  .dest-item.has-reply .dest-status { color: var(--green); }
+  .dest-item.send-error .dest-status { color: var(--red); }
+
+  .reply-text {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+    padding-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ---- Live log ---- */
+  #log-entries {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .log-line .ts { color: var(--text-faint); margin-right: 8px; }
+  .log-line .tag-sent  { color: var(--blue); margin-right: 6px; }
+  .log-line .tag-reply { color: var(--green); margin-right: 6px; }
+  .log-line .tag-err   { color: var(--red); margin-right: 6px; }
+
+  /* ---- Empty state ---- */
+  .empty {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ---- Toast ---- */
+  #toast-container {
+    position: fixed; bottom: 24px; right: 24px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .toast {
+    background: var(--bg-card);
+    border: 1px solid var(--border-lit);
+    border-left: 3px solid var(--gold);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    font-size: 12px;
+    color: var(--text);
+    max-width: 320px;
+    animation: slideIn 0.3s ease;
+    pointer-events: auto;
+  }
+
+  .toast.success { border-left-color: var(--green); }
+  .toast.error   { border-left-color: var(--red); }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ---- Loading overlay ---- */
+  #loading-overlay {
+    position: fixed; inset: 0;
+    background: rgba(11,12,14,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    gap: 16px;
+  }
+
+  .loading-title {
+    font-family: var(--font-head);
+    font-size: 14px;
+    letter-spacing: 0.3em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+
+  .loading-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .loader-bar {
+    width: 200px; height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .loader-bar::after {
+    content: '';
+    position: absolute;
+    left: -40%; width: 40%; height: 100%;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    animation: sweep 1.4s ease-in-out infinite;
+  }
+
+  @keyframes sweep { to { left: 140%; } }
+</style>
+</head>
+
+<body>
+<div id="app">
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay">
+    <div class="loading-title">Tournament C2</div>
+    <div class="loader-bar"></div>
+    <div class="loading-sub" id="loading-sub">Connecting accounts...</div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-title">
+      Tournament C2
+      <div class="sep"></div>
+      <span class="sub">DISPATCH CONSOLE</span>
+    </div>
+    <div id="account-status"></div>
+  </header>
+
+  <!-- Main -->
+  <main>
+
+    <!-- LEFT: Compose -->
+    <div class="panel" id="compose-panel">
+      <div class="panel-header"><div class="panel-title">Compose Dispatch</div></div>
+      <div class="panel-body">
+
+        <div class="field">
+          <label>Sending Account</label>
+          <div class="select-wrap">
+            <select id="account-select"><option value="">-- loading accounts --</option></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Message</label>
+          <textarea id="message-input" placeholder="Write your announcement or instruction..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Target Groups</label>
+          <div class="select-all-row">
+            <span class="selected-count" id="selected-count">0 selected</span>
+            <div style="display:flex;gap:12px">
+              <button class="link-btn" onclick="selectAll()">All</button>
+              <button class="link-btn" onclick="clearAll()">None</button>
+            </div>
+          </div>
+          <div id="group-list"><div class="empty">Select an account first</div></div>
+        </div>
+
+        <button id="send-btn" onclick="sendForward()">
+          <span class="btn-text">Dispatch Message</span>
+          <div class="btn-spinner"></div>
+        </button>
+
+      </div>
+    </div>
+
+    <!-- TOP RIGHT: Response Tracker -->
+    <div class="panel" id="tracker-panel">
+      <div class="panel-header">
+        <div class="panel-title">Response Tracker</div>
+      </div>
+      <div class="panel-body" id="tracker-body">
+        <div class="empty" id="tracker-empty">No dispatches yet</div>
+      </div>
+    </div>
+
+    <!-- BOTTOM RIGHT: Activity Log -->
+    <div class="panel" id="log-panel">
+      <div class="panel-header"><div class="panel-title">Activity Log</div></div>
+      <div class="panel-body" id="log-body">
+        <div id="log-entries"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+const state = {
+  accounts: [],
+  groups: [],
+  selectedGroups: new Set(),
+  forwards: {},       // id -> forward record
+  responses: {},      // forward_id -> [responses]
+};
+
+// ============================================================
+// Socket.IO
+// ============================================================
+const socket = io();
+
+socket.on("status_update", ({ ready, accounts }) => {
+  if (ready) {
+    hideLoading();
+    state.accounts = accounts;
+    buildAccountSelect();
+    toast("All accounts connected", "success");
+  }
+});
+
+socket.on("forward_created", (fwd) => {
+  state.forwards[fwd.id] = fwd;
+  state.responses[fwd.id] = [];
+  renderForwardCard(fwd);
+  logLine("sent", `[${fwd.account}] dispatched to ${fwd.destinations.length} group(s)`);
+});
+
+socket.on("new_response", (resp) => {
+  if (!state.responses[resp.forward_id]) state.responses[resp.forward_id] = [];
+  state.responses[resp.forward_id].push(resp);
+  updateDestItem(resp);
+  logLine("reply", `[${resp.group_name}] ${resp.sender}: ${resp.text.slice(0, 60)}`);
+  toast(`Reply from ${resp.group_name}: "${resp.text.slice(0, 48)}..."`, "success");
+});
+
+// ============================================================
+// Init
+// ============================================================
+async function init() {
+  const status = await apiFetch("/api/status");
+  if (status.ready) {
+    hideLoading();
+    state.accounts = status.accounts;
+    buildAccountSelect();
+    // Load any existing forwards
+    const forwards = await apiFetch("/api/forwards");
+    const responses = await apiFetch("/api/responses");
+    forwards.forEach(fwd => {
+      state.forwards[fwd.id] = fwd;
+      state.responses[fwd.id] = [];
+      renderForwardCard(fwd);
+    });
+    responses.forEach(resp => {
+      if (!state.responses[resp.forward_id]) state.responses[resp.forward_id] = [];
+      state.responses[resp.forward_id].push(resp);
+      updateDestItem(resp);
+    });
+  } else {
+    setLoadingText("Waiting for accounts to authenticate...");
+  }
+}
+
+// ============================================================
+// Account & Group UI
+// ============================================================
+function buildAccountSelect() {
+  const sel = document.getElementById("account-select");
+  sel.innerHTML = '<option value="">-- select account --</option>';
+  state.accounts.forEach(acc => {
+    const opt = document.createElement("option");
+    opt.value = acc;
+    opt.textContent = acc;
+    sel.appendChild(opt);
+  });
+  buildAccountPills(state.accounts);
+}
+
+function buildAccountPills(accounts) {
+  const container = document.getElementById("account-status");
+  container.innerHTML = "";
+  accounts.forEach(acc => {
+    const pill = document.createElement("div");
+    pill.className = "acc-pill online";
+    pill.id = `pill-${acc.replace(/\s+/g, "-")}`;
+    pill.innerHTML = `<span class="dot"></span>${acc}`;
+    container.appendChild(pill);
+  });
+}
+
+document.getElementById("account-select").addEventListener("change", async (e) => {
+  const acc = e.target.value;
+  state.selectedGroups.clear();
+  updateSelectedCount();
+
+  if (!acc) {
+    document.getElementById("group-list").innerHTML = '<div class="empty">Select an account first</div>';
+    return;
+  }
+
+  document.getElementById("group-list").innerHTML = '<div class="empty">Loading groups...</div>';
+  const groups = await apiFetch(`/api/groups/${encodeURIComponent(acc)}`);
+  state.groups = groups;
+  renderGroupList();
+});
+
+function renderGroupList() {
+  const container = document.getElementById("group-list");
+  if (!state.groups.length) {
+    container.innerHTML = '<div class="empty">No groups found for this account</div>';
+    return;
+  }
+  container.innerHTML = "";
+  state.groups.forEach(g => {
+    const item = document.createElement("div");
+    item.className = "group-item" + (state.selectedGroups.has(g.id) ? " selected" : "");
+    item.dataset.id = g.id;
+    item.innerHTML = `
+      <div class="group-checkbox">${state.selectedGroups.has(g.id) ? "✓" : ""}</div>
+      <span class="group-name">${escHtml(g.name)}</span>
+      <span class="group-id">${g.id}</span>
+    `;
+    item.addEventListener("click", () => toggleGroup(g.id, item));
+    container.appendChild(item);
+  });
+  updateSelectedCount();
+}
+
+function toggleGroup(id, item) {
+  if (state.selectedGroups.has(id)) {
+    state.selectedGroups.delete(id);
+    item.classList.remove("selected");
+    item.querySelector(".group-checkbox").textContent = "";
+  } else {
+    state.selectedGroups.add(id);
+    item.classList.add("selected");
+    item.querySelector(".group-checkbox").textContent = "✓";
+  }
+  updateSelectedCount();
+}
+
+function selectAll() {
+  state.groups.forEach(g => state.selectedGroups.add(g.id));
+  renderGroupList();
+}
+
+function clearAll() {
+  state.selectedGroups.clear();
+  renderGroupList();
+}
+
+function updateSelectedCount() {
+  document.getElementById("selected-count").textContent = `${state.selectedGroups.size} selected`;
+}
+
+// ============================================================
+// Send
+// ============================================================
+async function sendForward() {
+  const account = document.getElementById("account-select").value;
+  const message = document.getElementById("message-input").value.trim();
+
+  if (!account) { toast("Select an account first", "error"); return; }
+  if (!message) { toast("Message cannot be empty", "error"); return; }
+  if (!state.selectedGroups.size) { toast("Select at least one group", "error"); return; }
+
+  const destinations = state.groups
+    .filter(g => state.selectedGroups.has(g.id))
+    .map(g => ({ id: g.id, name: g.name }));
+
+  const btn = document.getElementById("send-btn");
+  btn.disabled = true;
+  btn.classList.add("loading");
+
+  try {
+    const result = await apiFetch("/api/forward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account, message, destinations }),
+    });
+
+    if (result.error) {
+      toast(result.error, "error");
+    } else {
+      document.getElementById("message-input").value = "";
+      state.selectedGroups.clear();
+      renderGroupList();
+      toast("Dispatch sent", "success");
+    }
+  } catch (e) {
+    toast("Send failed: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("loading");
+  }
+}
+
+// ============================================================
+// Tracker rendering
+// ============================================================
+function renderForwardCard(fwd) {
+  const body = document.getElementById("tracker-body");
+  document.getElementById("tracker-empty")?.remove();
+
+  const card = document.createElement("div");
+  card.className = "fwd-card";
+  card.id = `card-${fwd.id}`;
+
+  const ts = new Date(fwd.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const preview = fwd.message.length > 60 ? fwd.message.slice(0, 57) + "..." : fwd.message;
+
+  card.innerHTML = `
+    <div class="fwd-card-header">
+      <div class="fwd-meta">
+        <span class="fwd-account">${escHtml(fwd.account)}</span>
+        <span class="fwd-message">${escHtml(preview)}</span>
+      </div>
+      <span class="fwd-time">${ts}</span>
+    </div>
+    <div class="dest-grid" id="dests-${fwd.id}">
+      ${fwd.destinations.map(d => destItemHtml(d, fwd.id)).join("")}
+    </div>
+  `;
+
+  body.insertBefore(card, body.firstChild);
+}
+
+function destItemHtml(dest, fwdId) {
+  const isError = dest.status && dest.status.startsWith("error");
+  const cls = isError ? "send-error" : "";
+  const status = isError ? "send failed" : "waiting...";
+  return `
+    <div class="dest-item ${cls}" id="dest-${fwdId}-${dest.chat_id}">
+      <div class="dest-name">${escHtml(dest.group_name)}</div>
+      <div class="dest-status">${isError ? dest.status : status}</div>
+    </div>
+  `;
+}
+
+function updateDestItem(resp) {
+  // Find the dest item across all cards
+  const selector = `[id^="dest-"][id$="-${resp.group_id}"]`;
+  document.querySelectorAll(selector).forEach(el => {
+    const cardId = el.id.replace("dest-", "").replace(`-${resp.group_id}`, "");
+    if (cardId === resp.forward_id || el.id === `dest-${resp.forward_id}-${resp.group_id}`) {
+      el.classList.add("has-reply");
+      el.querySelector(".dest-status").textContent = `${resp.sender} replied`;
+
+      let replyEl = el.querySelector(".reply-text");
+      if (!replyEl) {
+        replyEl = document.createElement("div");
+        replyEl.className = "reply-text";
+        el.appendChild(replyEl);
+      }
+      replyEl.textContent = resp.text.slice(0, 80);
+    }
+  });
+}
+
+// ============================================================
+// Activity log
+// ============================================================
+function logLine(type, text) {
+  const container = document.getElementById("log-entries");
+  const line = document.createElement("div");
+  line.className = "log-line";
+  const ts = new Date().toLocaleTimeString([], { hour12: false });
+  const tagClass = type === "sent" ? "tag-sent" : type === "reply" ? "tag-reply" : "tag-err";
+  const tag = type.toUpperCase().padEnd(5);
+  line.innerHTML = `<span class="ts">${ts}</span><span class="${tagClass}">${tag}</span>${escHtml(text)}`;
+  container.insertBefore(line, container.firstChild);
+  // Keep last 200 lines
+  while (container.children.length > 200) container.removeChild(container.lastChild);
+}
+
+// ============================================================
+// Loading overlay
+// ============================================================
+function hideLoading() {
+  const overlay = document.getElementById("loading-overlay");
+  overlay.style.transition = "opacity 0.4s";
+  overlay.style.opacity = "0";
+  setTimeout(() => overlay.remove(), 400);
+}
+
+function setLoadingText(txt) {
+  document.getElementById("loading-sub").textContent = txt;
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function toast(msg, type = "") {
+  const container = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = "toast" + (type ? ` ${type}` : "");
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = "opacity 0.3s";
+    t.style.opacity = "0";
+    setTimeout(() => t.remove(), 300);
+  }, 3500);
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, opts);
+  return res.json();
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ============================================================
+// Start
+// ============================================================
+init();
+</script>
+</body>
+</html>
